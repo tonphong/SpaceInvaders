@@ -1,8 +1,11 @@
-import { sfx, unlockAudio, toggleMute, isMuted } from './audio.js';
+import { sfx, unlockAudio, toggleMute, isMuted, applyVolumes } from './audio.js';
+import { music } from './music.js';
 import { buildSprites, COLORS, SPR, rgba } from './sprites.js';
 import { createInput } from './input.js';
+import { createUI } from './ui.js';
+import { settings, progress, unlockWave, loadHi, saveHi, bindLabel, DIFFICULTIES } from './settings.js';
 
-const VERSION = '1.0.0';
+const VERSION = '1.1.0';
 const W = 600;
 const H = 800;
 const HALF = SPR / 2;
@@ -20,7 +23,6 @@ const POWER_TIME = 12;
 const MAX_LIVES = 6;
 const EXTRA_LIFE_EVERY = 15000;
 const MAX_PARTICLES = 700;
-const HI_KEY = 'spaceinvader.polarity.hi';
 const FONT = "'Orbitron', 'Segoe UI', system-ui, sans-serif";
 const BASE_POINTS = { darter: 20, warden: 40, lancer: 60 };
 const LANCER_ORDER = [3, 4, 1, 6, 0, 7, 2, 5];
@@ -49,9 +51,18 @@ const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 const stage = document.getElementById('stage');
 const muteBtn = document.getElementById('btn-mute');
+const uiRoot = document.getElementById('ui');
 const fine = matchMedia('(pointer: fine)').matches;
-let isTouch = matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints > 0 && !fine);
-if (isTouch) document.body.classList.add('touch');
+let touchDetected = matchMedia('(pointer: coarse)').matches || (navigator.maxTouchPoints > 0 && !fine);
+let isTouch = false;
+
+function applyTouchMode() {
+  const show = settings.touch === 'on' || (settings.touch === 'auto' && touchDetected);
+  if (show === isTouch) return;
+  isTouch = show;
+  document.body.classList.toggle('touch', show);
+  resize();
+}
 
 const view = { scale: 1, dpr: 1 };
 
@@ -66,7 +77,9 @@ function resize() {
   canvas.width = Math.round(W * scale * dpr);
   canvas.height = Math.round(H * scale * dpr);
   document.documentElement.style.setProperty('--side', `${Math.max(0, (window.innerWidth - W * scale) / 2)}px`);
+  uiRoot.style.setProperty('--u', `${scale}px`);
 }
+applyTouchMode();
 resize();
 window.addEventListener('resize', resize);
 window.addEventListener('orientationchange', () => setTimeout(resize, 120));
@@ -86,22 +99,15 @@ const input = createInput({
   getCanvasScale: () => view.scale,
   onGesture: unlockAudio,
   onTouch: () => {
-    if (isTouch) return;
-    isTouch = true;
-    document.body.classList.add('touch');
-    resize();
+    if (touchDetected) return;
+    touchDetected = true;
+    applyTouchMode();
   },
+  isPlaying: () => mode === 'playing',
 });
 
 function syncMute() { muteBtn?.classList.toggle('muted', isMuted()); }
 syncMute();
-
-function loadHi() {
-  try { return parseInt(localStorage.getItem(HI_KEY) || '0', 10) || 0; } catch { return 0; }
-}
-function saveHi(v) {
-  try { localStorage.setItem(HI_KEY, String(v)); } catch { /* storage unavailable */ }
-}
 
 // ---------- background ----------
 
@@ -174,7 +180,7 @@ function drawStars() {
 
 // ---------- game state ----------
 
-let mode = 'title';
+let mode = 'menu';
 let game = null;
 let time = 0;
 let modeTimer = 0;
@@ -182,13 +188,14 @@ let hiScore = loadHi();
 let newHi = false;
 
 function waveCfg(n) {
+  const d = DIFFICULTIES[settings.difficulty];
   return {
-    fieldSpeed: Math.min(22, 5.5 + n * 1.3),
-    fireRate: Math.min(2.4, 0.4 + n * 0.14),
-    aggroRate: Math.min(1.4, 0.18 + n * 0.09),
+    fieldSpeed: Math.min(22, 5.5 + n * 1.3) * d.field,
+    fireRate: Math.min(2.4, 0.4 + n * 0.14) * d.fire,
+    aggroRate: Math.min(1.4, 0.18 + n * 0.09) * d.fire,
     bulletSpeed: Math.min(380, 210 + n * 12),
     dodge: Math.min(0.65, 0.2 + n * 0.05),
-    lancerInterval: Math.max(2.2, 5.4 - n * 0.3),
+    lancerInterval: Math.max(2.2, 5.4 - n * 0.3) * d.lancer,
     lancerMax: 1 + Math.floor(n / 4),
     lancerCount: Math.min(COLS, 2 + n),
     flipInterval: n >= 3 ? Math.max(5, 10.5 - (n - 3) * 0.6) : 0,
@@ -196,7 +203,7 @@ function waveCfg(n) {
   };
 }
 
-function newGame() {
+function newGame(startAt) {
   newHi = false;
   game = {
     score: 0, lives: 3, wave: 0, nextLife: EXTRA_LIFE_EVERY,
@@ -210,7 +217,7 @@ function newGame() {
     intro: 0, clearing: false, clearTimer: 0, deadTimer: 0,
     stats: { shots: 0, hits: 0 },
   };
-  startWave(1);
+  startWave(startAt);
 }
 
 function startWave(n) {
@@ -787,6 +794,8 @@ function updateMarch(dt) {
   const g = game;
   if (g.clearing || !g.player.alive || g.intro < 1.2) return;
   g.danger = clamp((lowestEnemyY() - 290) / (BREACH_Y - 290), 0, 1);
+  // The classic speeding-up march only plays when the soundtrack is off; otherwise the music carries the tension.
+  if (settings.music > 0) return;
   g.marchTimer -= dt;
   if (g.marchTimer <= 0) {
     g.marchTimer = lerp(0.8, 0.2, g.danger);
@@ -815,6 +824,7 @@ function checkWaveFlow(dt) {
   if (!g.player.alive || g.enemies.some((e) => e.alive)) return;
   g.clearing = true;
   g.clearTimer = 2.8;
+  unlockWave(g.wave + 1);
   const remaining = Math.max(0, 340 - (g.formation.fieldY - FIELD_START));
   const bonus = Math.round((remaining * 3 * (1 + g.wave * 0.2)) / 10) * 10;
   addScore(bonus);
@@ -887,35 +897,83 @@ function updateGame(dt) {
   updateEffects(dt);
 }
 
-function enterGameOver() {
-  mode = 'gameover';
+function recordScore() {
+  if (!game || game.score <= hiScore) return;
+  hiScore = game.score;
+  newHi = true;
+  saveHi(hiScore);
+}
+
+function setMode(m) {
+  mode = m;
   modeTimer = 0;
-  if (game.score > hiScore) {
-    hiScore = game.score;
-    newHi = true;
-    saveHi(hiScore);
+  document.body.classList.toggle('in-menu', m !== 'playing');
+  if (m !== 'playing') input.releaseAll();
+  music.setPaused(m === 'paused');
+  music.play(m === 'playing' || m === 'paused' ? 'game' : 'menu');
+}
+
+function startRun(wave) {
+  newGame(clamp(wave, 1, progress.unlocked));
+  ui.show(null);
+  setMode('playing');
+}
+
+function pauseGame() {
+  if (mode !== 'playing') return;
+  setMode('paused');
+  ui.show('pause');
+}
+
+function resumeGame() {
+  if (mode !== 'paused') return;
+  ui.show(null);
+  setMode('playing');
+}
+
+function quitToMenu() {
+  recordScore();
+  game = null;
+  setMode('menu');
+  ui.show('main');
+}
+
+function enterGameOver() {
+  recordScore();
+  ui.context.retryWave = game.wave;
+  setMode('gameover');
+}
+
+function handleAction(action, data) {
+  switch (action) {
+    case 'continue': startRun(progress.unlocked); break;
+    case 'new': startRun(1); break;
+    case 'start': startRun(data.wave); break;
+    case 'retry': startRun(ui.context.retryWave); break;
+    case 'resume': resumeGame(); break;
+    case 'quit': quitToMenu(); break;
   }
+}
+
+function handleSettingsChanged(key) {
+  if (key === 'touch') applyTouchMode();
+  if (key === 'muted') { applyVolumes(); syncMute(); }
 }
 
 function update(dt) {
   time += dt;
   updateStars(dt);
-  if (input.take('mute')) { toggleMute(); syncMute(); }
+  if (input.take('mute')) { toggleMute(); syncMute(); if (ui.current() === 'settings') ui.refresh(); }
   switch (mode) {
-    case 'title':
-      if (input.take('start')) { newGame(); mode = 'playing'; }
-      break;
     case 'playing':
-      if (input.take('pause')) mode = 'paused';
+      if (input.take('pause')) pauseGame();
       else updateGame(dt);
-      break;
-    case 'paused':
-      if (input.take('pause') || input.take('start')) mode = 'playing';
+      if (game) music.setIntensity(game.danger);
       break;
     case 'gameover':
       modeTimer += dt;
       updateEffects(dt);
-      if (modeTimer > 1.2 && input.take('start')) { newGame(); mode = 'playing'; }
+      if (modeTimer > 1.1 && !ui.current()) ui.show('over');
       break;
   }
   input.endFrame();
@@ -1265,7 +1323,7 @@ function drawPopups() {
 function drawWorld() {
   const g = game;
   ctx.save();
-  if (g.shake > 0.2) ctx.translate(rand(-1, 1) * g.shake, rand(-1, 1) * g.shake);
+  if (g.shake > 0.2 && settings.shake) ctx.translate(rand(-1, 1) * g.shake, rand(-1, 1) * g.shake);
   if (!g.clearing) drawField();
   drawBreach();
   drawBeams();
@@ -1354,56 +1412,30 @@ function dimScreen(a) {
 
 function drawTitle() {
   const bob = Math.sin(time * 2) * 3;
-  text('SPACE', W / 2, 118 + bob, { size: 56, weight: 900, color: COLORS.pol[0], glow: 22, spacing: 6 });
-  text('INVADER', W / 2, 176 + bob, { size: 56, weight: 900, color: COLORS.pol[1], glow: 22, spacing: 6 });
-  text('— POLARITY —', W / 2, 212, { size: 14, weight: 700, color: COLORS.white, spacing: 6, alpha: 0.85 });
+  text('SPACE', W / 2, 112 + bob, { size: 56, weight: 900, color: COLORS.pol[0], glow: 22, spacing: 6 });
+  text('INVADERS', W / 2, 170 + bob, { size: 56, weight: 900, color: COLORS.pol[1], glow: 22, spacing: 6 });
+  text('— POLARITY —', W / 2, 206, { size: 14, weight: 700, color: COLORS.white, spacing: 6, alpha: 0.85 });
 
-  const rows = [
-    { img: sprites.darter[0][Math.floor(time * 2) % 2], name: 'DARTER', pts: '20', desc: 'Evasive. Sidesteps your shots.', color: COLORS.pol[0] },
-    { img: sprites.warden[1][Math.floor(time * 2) % 2], name: 'WARDEN', pts: '40', desc: 'Shielded. Takes two hits.', color: COLORS.pol[1] },
-    { img: sprites.lancer[0][Math.floor(time * 2) % 2], name: 'LANCER', pts: '60', desc: 'Charges a telegraphed beam.', color: COLORS.pol[0] },
-    { img: sprites.courier[Math.floor(time * 6) % 2], name: 'COURIER', pts: '150', desc: 'Drops a drone power-up.', color: COLORS.gold },
-  ];
-  rows.forEach((r, i) => {
-    const y = 272 + i * 58;
-    ctx.drawImage(r.img, 118 - 30, y - 30, 60, 60);
-    text(r.name, 168, y - 2, { size: 15, weight: 900, align: 'left', color: r.color, spacing: 2 });
-    text(r.desc, 168, y + 16, { size: 10, align: 'left', color: rgba(COLORS.white, 0.7), weight: 500 });
-    text(`${r.pts} PTS`, 492, y + 6, { size: 12, align: 'right', color: rgba(COLORS.white, 0.85) });
+  const f = Math.floor(time * 2) % 2;
+  const parade = [sprites.darter[0][f], sprites.warden[1][f], sprites.lancer[0][f], sprites.courier[Math.floor(time * 6) % 2]];
+  parade.forEach((img, i) => {
+    const x = W / 2 + (i - 1.5) * 76;
+    const y = 250 + Math.sin(time * 2.4 + i * 1.1) * 5;
+    ctx.drawImage(img, x - 26, y - 26, 52, 52);
   });
 
-  const rules = [
-    ['Shots only hurt enemies of your polarity', COLORS.white],
-    ['Chain kills without missing — up to x8', COLORS.gold],
-    ['Watch your heat · Hold the breach line', COLORS.danger],
-  ];
-  rules.forEach(([r, c], i) => text(r.toUpperCase(), W / 2, 530 + i * 22, { size: 10.5, color: c, alpha: 0.9, spacing: 1 }));
-  polarityGlyph(W / 2 - 40, 612, 0, 6);
-  polarityGlyph(W / 2 + 40, 612, 1, 6);
-  text('⇄', W / 2, 618, { size: 16, color: rgba(COLORS.white, 0.7), weight: 500 });
-
-  if (isTouch) {
-    text('DRAG TO MOVE · HOLD FIRE · TAP SWAP', W / 2, 660, { size: 11, color: rgba(COLORS.white, 0.75), spacing: 1 });
-  } else {
-    text('MOVE  ← →  A D     FIRE  SPACE / Z     SWAP  X / SHIFT', W / 2, 656, { size: 10.5, color: rgba(COLORS.white, 0.75), spacing: 1 });
-    text('P  PAUSE     M  MUTE', W / 2, 676, { size: 10, color: rgba(COLORS.white, 0.5), spacing: 1 });
-  }
-  if (Math.floor(time * 2) % 2 === 0) {
-    text(isTouch ? 'TAP TO START' : 'PRESS ENTER TO START', W / 2, 724, { size: 16, weight: 900, color: COLORS.white, glow: 12, spacing: 3 });
+  if (!isTouch) {
+    const hint = `MOVE ${bindLabel('left')} ${bindLabel('right')}   FIRE ${bindLabel('fire')}   SWAP ${bindLabel('swap')}`;
+    text(hint, W / 2, 660, { size: 10, color: rgba(COLORS.white, 0.6), spacing: 1 });
+    text(`PAUSE ${bindLabel('pause')}   MUTE ${bindLabel('mute')}   ·   ARROWS + ENTER TO NAVIGATE`, W / 2, 680, { size: 9, color: rgba(COLORS.white, 0.4), spacing: 1 });
   }
   text(`HI ${String(hiScore).padStart(7, '0')}`, 16, 786, { size: 10, align: 'left', color: rgba(COLORS.white, 0.55) });
   text(`v${VERSION}`, W - 16, 786, { size: 10, align: 'right', color: rgba(COLORS.white, 0.4) });
 }
 
-function drawPause() {
-  dimScreen(0.6);
-  text('PAUSED', W / 2, H / 2 - 10, { size: 42, weight: 900, color: COLORS.pol[0], glow: 18, spacing: 4 });
-  text(isTouch ? 'TAP TO RESUME' : 'PRESS P TO RESUME', W / 2, H / 2 + 26, { size: 12, alpha: 0.8, spacing: 2 });
-}
-
 function drawGameOver() {
   const g = game;
-  dimScreen(Math.min(0.7, modeTimer));
+  dimScreen(Math.min(0.8, modeTimer));
   text('GAME OVER', W / 2, 300, { size: 48, weight: 900, color: COLORS.danger, glow: 22, spacing: 4 });
   text(String(g.score).padStart(7, '0'), W / 2, 360, { size: 30, weight: 900, glow: 10 });
   if (newHi && Math.floor(time * 3) % 2 === 0) text('NEW HIGH SCORE', W / 2, 392, { size: 13, color: COLORS.gold, glow: 10, spacing: 3 });
@@ -1414,9 +1446,6 @@ function drawGameOver() {
     text(k, x, 440, { size: 9, color: rgba(COLORS.white, 0.5), spacing: 2 });
     text(String(v), x, 464, { size: 18 });
   });
-  if (modeTimer > 1.2 && Math.floor(time * 2) % 2 === 0) {
-    text(isTouch ? 'TAP TO PLAY AGAIN' : 'PRESS ENTER TO PLAY AGAIN', W / 2, 540, { size: 14, weight: 900, spacing: 3, glow: 10 });
-  }
 }
 
 function render() {
@@ -1426,23 +1455,26 @@ function render() {
   ctx.globalCompositeOperation = 'source-over';
   ctx.drawImage(bg, 0, 0, W, H);
   drawStars();
-  if (mode === 'title') {
+  if (mode === 'menu' || !game) {
     drawTitle();
     return;
   }
   drawWorld();
   drawHUD();
-  if (game.flash > 0) {
+  if (game.flash > 0 && settings.flashes) {
     ctx.fillStyle = rgba(game.flashColor, Math.min(0.35, game.flash * 0.6));
     ctx.fillRect(0, 0, W, H);
   }
   drawBanner();
-  if (mode === 'paused') drawPause();
+  if (mode === 'paused') dimScreen(0.6);
   if (mode === 'gameover') drawGameOver();
 }
 
+const ui = createUI({ root: uiRoot, sprites, onAction: handleAction, onSettingsChanged: handleSettingsChanged });
+ui.show('main');
+
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden && mode === 'playing') mode = 'paused';
+  if (document.hidden) pauseGame();
 });
 
 let last = performance.now();

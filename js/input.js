@@ -1,26 +1,21 @@
-// Unified keyboard + multi-touch input. Movement from touch is relative drag, so the finger never hides the ship.
-const FIRE_KEYS = ['Space', 'KeyZ', 'KeyJ'];
-const SWAP_KEYS = ['KeyX', 'KeyK', 'ShiftLeft', 'ShiftRight', 'ArrowDown', 'KeyS'];
-const LEFT_KEYS = ['ArrowLeft', 'KeyA'];
-const RIGHT_KEYS = ['ArrowRight', 'KeyD'];
-const BLOCK_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space']);
+// Unified keyboard + multi-touch gameplay input. Keys come from the player's saved keybinds.
+// Touch movement is relative drag, so the finger never hides the ship.
+import { settings, actionForKey } from './settings.js';
 
-export function createInput({ canvas, pad, fireBtn, swapBtn, pauseBtn, muteBtn, logicalWidth, getCanvasScale, onGesture, onTouch }) {
+export function createInput({ canvas, pad, fireBtn, swapBtn, pauseBtn, muteBtn, logicalWidth, getCanvasScale, onGesture, onTouch, isPlaying }) {
   const keys = new Set();
-  const edges = { swap: false, pause: false, start: false, mute: false };
+  const edges = { swap: false, pause: false, mute: false };
   const drags = new Map();
   const fireTouches = new Set();
   let drag = 0;
 
   window.addEventListener('keydown', (e) => {
     onGesture();
-    if (BLOCK_KEYS.has(e.code)) e.preventDefault();
+    const action = actionForKey(e.code);
+    if (action && isPlaying()) e.preventDefault();
     keys.add(e.code);
-    if (e.repeat) return;
-    if (SWAP_KEYS.includes(e.code)) edges.swap = true;
-    if (e.code === 'KeyP' || e.code === 'Escape') edges.pause = true;
-    if (e.code === 'KeyM') edges.mute = true;
-    if (e.code === 'Enter' || e.code === 'Space') edges.start = true;
+    if (e.repeat || !action) return;
+    if (action in edges) edges[action] = true;
   });
   window.addEventListener('keyup', (e) => keys.delete(e.code));
   window.addEventListener('blur', () => { keys.clear(); fireTouches.clear(); drags.clear(); });
@@ -28,7 +23,6 @@ export function createInput({ canvas, pad, fireBtn, swapBtn, pauseBtn, muteBtn, 
   window.addEventListener('pointerdown', (e) => {
     onGesture();
     if (e.pointerType === 'touch') onTouch();
-    edges.start = true;
   });
   window.addEventListener('pointerup', onGesture);
 
@@ -44,12 +38,13 @@ export function createInput({ canvas, pad, fireBtn, swapBtn, pauseBtn, muteBtn, 
   }
 
   canvas.addEventListener('pointerdown', (e) => {
+    if (!isPlaying()) return;
     e.preventDefault();
     beginDrag(canvas, e, () => 1 / getCanvasScale());
   });
   pad?.addEventListener('pointerdown', (e) => {
     e.preventDefault();
-    beginDrag(pad, e, () => (logicalWidth / pad.getBoundingClientRect().width));
+    beginDrag(pad, e, () => logicalWidth / pad.getBoundingClientRect().width);
   });
   window.addEventListener('pointermove', (e) => {
     const d = drags.get(e.pointerId);
@@ -73,19 +68,19 @@ export function createInput({ canvas, pad, fireBtn, swapBtn, pauseBtn, muteBtn, 
   });
   swapBtn?.addEventListener('pointerup', () => swapBtn.classList.remove('pressed'));
   swapBtn?.addEventListener('pointerleave', () => swapBtn.classList.remove('pressed'));
-  // Utility buttons must not also count as "tap to start/resume".
-  pauseBtn?.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); onGesture(); edges.pause = true; });
-  muteBtn?.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); onGesture(); edges.mute = true; });
+  pauseBtn?.addEventListener('pointerdown', (e) => { e.preventDefault(); onGesture(); edges.pause = true; });
+  muteBtn?.addEventListener('pointerdown', (e) => { e.preventDefault(); onGesture(); edges.mute = true; });
 
-  window.addEventListener('contextmenu', (e) => e.preventDefault());
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
 
-  const any = (list) => list.some((k) => keys.has(k));
+  const held = (action) => settings.binds[action].some((k) => k && keys.has(k));
   return {
-    get left() { return any(LEFT_KEYS); },
-    get right() { return any(RIGHT_KEYS); },
-    get fire() { return any(FIRE_KEYS) || fireTouches.size > 0; },
+    get left() { return held('left'); },
+    get right() { return held('right'); },
+    get fire() { return held('fire') || fireTouches.size > 0; },
     takeDrag() { const d = drag; drag = 0; return d; },
     take(name) { const v = edges[name]; edges[name] = false; return v; },
     endFrame() { for (const k in edges) edges[k] = false; drag = 0; },
+    releaseAll() { keys.clear(); fireTouches.clear(); fireBtn?.classList.remove('pressed'); },
   };
 }
