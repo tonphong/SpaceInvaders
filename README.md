@@ -13,6 +13,15 @@ A neon twist on the arcade classic, built with plain HTML5 Canvas and JavaScript
   # then open http://localhost:8000
   ```
 
+### Add to home screen
+
+The game has an app icon and a web app manifest, so it can be installed and launched full-screen like an app:
+
+- **iPhone / iPad (Safari):** tap **Share → Add to Home Screen**.
+- **Android (Chrome):** open the **⋮** menu, then tap **Add to Home screen** (or **Install app**).
+
+See [CHANGELOG.md](CHANGELOG.md) for release history.
+
 ## Menus & progress
 
 - **Continue** picks up at the furthest wave you've reached. **New Run** always starts again from wave 1.
@@ -80,6 +89,8 @@ The `.nojekyll` file tells Pages to serve the files as they are.
 
 ```
 index.html        page shell, menu panels, touch controls
+manifest.webmanifest  home-screen / install metadata
+icons/            app icon (SVG source + rendered PNGs)
 css/style.css     layout, menus, responsive touch controls
 js/game.js        game loop, mechanics, rendering, game flow
 js/ui.js          menus: main, wave select, how to play, settings, pause, game over

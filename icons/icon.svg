@@ -1,0 +1,60 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg" cx="50%" cy="55%" r="75%">
+      <stop offset="0" stop-color="#1c0c3a"/>
+      <stop offset="0.6" stop-color="#0b0620"/>
+      <stop offset="1" stop-color="#05030f"/>
+    </radialGradient>
+    <radialGradient id="glowM" cx="22%" cy="18%" r="45%">
+      <stop offset="0" stop-color="#ff3df2" stop-opacity="0.35"/>
+      <stop offset="1" stop-color="#ff3df2" stop-opacity="0"/>
+    </radialGradient>
+    <radialGradient id="glowC" cx="80%" cy="85%" r="50%">
+      <stop offset="0" stop-color="#29e7ff" stop-opacity="0.28"/>
+      <stop offset="1" stop-color="#29e7ff" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="grid" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#b18cff" stop-opacity="0"/>
+      <stop offset="1" stop-color="#b18cff" stop-opacity="0.35"/>
+    </linearGradient>
+    <filter id="neon" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="7" result="b1"/>
+      <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="b2"/>
+      <feMerge><feMergeNode in="b1"/><feMergeNode in="b2"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" fill="url(#bg)"/>
+  <rect width="512" height="512" fill="url(#glowM)"/>
+  <rect width="512" height="512" fill="url(#glowC)"/>
+
+  <g stroke="url(#grid)" stroke-width="2" fill="none">
+    <path d="M0 400H512M0 424H512M0 456H512M0 498H512"/>
+    <path d="M256 380L256 512M216 380L120 512M296 380L392 512M176 380L-16 512M336 380L528 512"/>
+  </g>
+
+  <g fill="#fff" opacity="0.7">
+    <circle cx="70" cy="90" r="2.5"/><circle cx="440" cy="70" r="2"/><circle cx="400" cy="200" r="2.5"/>
+    <circle cx="110" cy="260" r="2"/><circle cx="460" cy="320" r="1.8"/><circle cx="60" cy="350" r="2.2"/>
+  </g>
+
+  <!-- invader (magenta darter) -->
+  <g filter="url(#neon)" transform="translate(256 150) scale(5.2)" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M0 15L7 2L18 -4L10 -10L0 -4L-10 -10L-18 -4L-7 2Z" fill="#ff3df2" fill-opacity="0.22" stroke="#ff3df2" stroke-width="2.2"/>
+    <path d="M-4 -6L-6 -15M4 -6L6 -15" stroke="#ff3df2" stroke-width="1.6"/>
+    <path d="M0 -2.8L4.8 2L0 6.8L-4.8 2Z" fill="#fff"/>
+  </g>
+
+  <!-- bolt -->
+  <g filter="url(#neon)">
+    <rect x="250" y="236" width="12" height="30" rx="6" fill="#29e7ff"/>
+    <rect x="253.5" y="240" width="5" height="20" rx="2.5" fill="#fff"/>
+  </g>
+
+  <!-- player ship (cyan) -->
+  <g filter="url(#neon)" transform="translate(256 372) scale(4.8)" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M0 -21L6 -7L9 -2L19 8L19 13L7 10L4 14L-4 14L-7 10L-19 13L-19 8L-9 -2L-6 -7Z" fill="#29e7ff" fill-opacity="0.22" stroke="#29e7ff" stroke-width="2.4"/>
+    <path d="M-13 6V12M13 6V12" stroke="#29e7ff" stroke-width="1.4"/>
+    <circle cx="0" cy="1" r="3.8" fill="#fff"/>
+  </g>
+</svg>
